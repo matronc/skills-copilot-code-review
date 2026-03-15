@@ -855,6 +855,288 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // ── Announcement Banner ────────────────────────────────────────────────────
+
+  const announcementBanner = document.getElementById("announcement-banner");
+  const announcementText = document.getElementById("announcement-text");
+  const announcementNav = document.getElementById("announcement-nav");
+  const annCounter = document.getElementById("ann-counter");
+  const annPrev = document.getElementById("ann-prev");
+  const annNext = document.getElementById("ann-next");
+
+  let activeAnnouncements = [];
+  let currentAnnIndex = 0;
+  let annRotateInterval = null;
+
+  function showAnnouncementAt(index) {
+    if (!activeAnnouncements.length) return;
+    currentAnnIndex = (index + activeAnnouncements.length) % activeAnnouncements.length;
+    const ann = activeAnnouncements[currentAnnIndex];
+    announcementText.textContent = ann.message;
+    if (activeAnnouncements.length > 1) {
+      annCounter.textContent = `${currentAnnIndex + 1} / ${activeAnnouncements.length}`;
+      announcementNav.classList.remove("hidden");
+    } else {
+      announcementNav.classList.add("hidden");
+    }
+  }
+
+  function startBannerRotation() {
+    if (annRotateInterval) clearInterval(annRotateInterval);
+    if (activeAnnouncements.length > 1) {
+      annRotateInterval = setInterval(() => {
+        showAnnouncementAt(currentAnnIndex + 1);
+      }, 6000);
+    }
+  }
+
+  async function fetchAndDisplayAnnouncements() {
+    try {
+      const response = await fetch("/announcements");
+      if (!response.ok) return;
+      activeAnnouncements = await response.json();
+    } catch (error) {
+      console.error("Error fetching announcements:", error);
+      activeAnnouncements = [];
+    }
+
+    if (activeAnnouncements.length === 0) {
+      announcementBanner.classList.add("hidden");
+      if (annRotateInterval) clearInterval(annRotateInterval);
+      return;
+    }
+
+    announcementBanner.classList.remove("hidden");
+    showAnnouncementAt(0);
+    startBannerRotation();
+  }
+
+  annPrev.addEventListener("click", () => {
+    showAnnouncementAt(currentAnnIndex - 1);
+    startBannerRotation();
+  });
+
+  annNext.addEventListener("click", () => {
+    showAnnouncementAt(currentAnnIndex + 1);
+    startBannerRotation();
+  });
+
+  // ── Announcements Management Dialog ────────────────────────────────────────
+
+  const manageAnnouncementsBtn = document.getElementById("manage-announcements-btn");
+  const announcementsModal = document.getElementById("announcements-modal");
+  const closeAnnModal = document.querySelector(".close-announcements-modal");
+  const annForm = document.getElementById("ann-form");
+  const annFormTitle = document.getElementById("ann-form-title");
+  const annEditId = document.getElementById("ann-edit-id");
+  const annMessageInput = document.getElementById("ann-message");
+  const annStartsAtInput = document.getElementById("ann-starts-at");
+  const annExpiresAtInput = document.getElementById("ann-expires-at");
+  const annSubmitBtn = document.getElementById("ann-submit-btn");
+  const annCancelEdit = document.getElementById("ann-cancel-edit");
+  const annListDiv = document.getElementById("ann-list");
+  const annFormMessage = document.getElementById("ann-form-message");
+
+  function openAnnouncementsModal() {
+    announcementsModal.classList.remove("hidden");
+    setTimeout(() => announcementsModal.classList.add("show"), 10);
+    resetAnnForm();
+    loadAllAnnouncements();
+  }
+
+  function closeAnnouncementsModal() {
+    announcementsModal.classList.remove("show");
+    setTimeout(() => announcementsModal.classList.add("hidden"), 300);
+  }
+
+  function resetAnnForm() {
+    annEditId.value = "";
+    annForm.reset();
+    annFormTitle.textContent = "Add New Announcement";
+    annSubmitBtn.textContent = "Add Announcement";
+    annCancelEdit.classList.add("hidden");
+    annFormMessage.classList.add("hidden");
+  }
+
+  function showAnnFormMessage(text, type) {
+    annFormMessage.textContent = text;
+    annFormMessage.className = `message ${type}`;
+    annFormMessage.classList.remove("hidden");
+    setTimeout(() => annFormMessage.classList.add("hidden"), 5000);
+  }
+
+  function getAnnouncementStatus(ann) {
+    const today = new Date().toISOString().split("T")[0];
+    if (ann.expires_at < today) return "expired";
+    if (ann.starts_at && ann.starts_at > today) return "upcoming";
+    return "active";
+  }
+
+  function formatDisplayDate(dateStr) {
+    if (!dateStr) return "—";
+    const [year, month, day] = dateStr.split("-");
+    return `${month}/${day}/${year}`;
+  }
+
+  async function loadAllAnnouncements() {
+    if (!currentUser) return;
+    annListDiv.innerHTML = '<p class="ann-loading">Loading...</p>';
+    try {
+      const response = await fetch(
+        `/announcements/all?teacher_username=${encodeURIComponent(currentUser.username)}`
+      );
+      if (!response.ok) {
+        annListDiv.innerHTML = '<p class="ann-loading">Failed to load announcements.</p>';
+        return;
+      }
+      const announcements = await response.json();
+
+      if (announcements.length === 0) {
+        annListDiv.innerHTML = '<p class="ann-empty">No announcements yet. Add one above!</p>';
+        return;
+      }
+
+      annListDiv.innerHTML = "";
+      announcements.forEach((ann) => renderAnnouncementRow(ann));
+    } catch (error) {
+      console.error("Error loading announcements:", error);
+      annListDiv.innerHTML = '<p class="ann-loading">Failed to load announcements.</p>';
+    }
+  }
+
+  function renderAnnouncementRow(ann) {
+    const status = getAnnouncementStatus(ann);
+    const statusLabels = { active: "Active", upcoming: "Upcoming", expired: "Expired" };
+    const row = document.createElement("div");
+    row.className = `ann-row ann-status-${status}`;
+    row.dataset.id = ann.id;
+    row.innerHTML = `
+      <div class="ann-row-status">
+        <span class="ann-badge ann-badge-${status}">${statusLabels[status]}</span>
+      </div>
+      <div class="ann-row-body">
+        <p class="ann-row-message">${escapeHtml(ann.message)}</p>
+        <p class="ann-row-dates">
+          <span>Start: ${formatDisplayDate(ann.starts_at)}</span>
+          <span>Expires: ${formatDisplayDate(ann.expires_at)}</span>
+        </p>
+      </div>
+      <div class="ann-row-actions">
+        <button class="ann-edit-btn icon-btn" title="Edit" aria-label="Edit">✏️</button>
+        <button class="ann-delete-btn icon-btn" title="Delete" aria-label="Delete">🗑️</button>
+      </div>
+    `;
+
+    row.querySelector(".ann-edit-btn").addEventListener("click", () => startEditAnnouncement(ann));
+    row.querySelector(".ann-delete-btn").addEventListener("click", () => confirmDeleteAnnouncement(ann));
+    annListDiv.appendChild(row);
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+  }
+
+  function startEditAnnouncement(ann) {
+    annEditId.value = ann.id;
+    annMessageInput.value = ann.message;
+    annStartsAtInput.value = ann.starts_at || "";
+    annExpiresAtInput.value = ann.expires_at || "";
+    annFormTitle.textContent = "Edit Announcement";
+    annSubmitBtn.textContent = "Save Changes";
+    annCancelEdit.classList.remove("hidden");
+    annFormMessage.classList.add("hidden");
+    annForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  annCancelEdit.addEventListener("click", resetAnnForm);
+
+  annForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!currentUser) return;
+
+    const id = annEditId.value;
+    const message = annMessageInput.value.trim();
+    const startsAt = annStartsAtInput.value || "";
+    const expiresAt = annExpiresAtInput.value;
+
+    if (!message || !expiresAt) {
+      showAnnFormMessage("Message and expiry date are required.", "error");
+      return;
+    }
+
+    const params = new URLSearchParams({
+      message,
+      expires_at: expiresAt,
+      teacher_username: currentUser.username,
+    });
+    if (startsAt) params.set("starts_at", startsAt);
+
+    try {
+      const isEdit = Boolean(id);
+      const url = isEdit
+        ? `/announcements/${encodeURIComponent(id)}?${params}`
+        : `/announcements?${params}`;
+      const method = isEdit ? "PUT" : "POST";
+
+      const response = await fetch(url, { method });
+      const result = await response.json();
+
+      if (!response.ok) {
+        showAnnFormMessage(result.detail || "An error occurred.", "error");
+        return;
+      }
+
+      showAnnFormMessage(
+        isEdit ? "Announcement updated." : "Announcement added.",
+        "success"
+      );
+      resetAnnForm();
+      loadAllAnnouncements();
+      fetchAndDisplayAnnouncements(); // refresh banner
+    } catch (error) {
+      console.error("Error saving announcement:", error);
+      showAnnFormMessage("Failed to save announcement.", "error");
+    }
+  });
+
+  function confirmDeleteAnnouncement(ann) {
+    showConfirmationDialog(
+      `Delete this announcement?\n\n"${ann.message}"`,
+      async () => {
+        try {
+          const response = await fetch(
+            `/announcements/${encodeURIComponent(ann.id)}?teacher_username=${encodeURIComponent(currentUser.username)}`,
+            { method: "DELETE" }
+          );
+          if (!response.ok) {
+            const result = await response.json();
+            showAnnFormMessage(result.detail || "Failed to delete.", "error");
+            return;
+          }
+          loadAllAnnouncements();
+          fetchAndDisplayAnnouncements();
+        } catch (error) {
+          console.error("Error deleting announcement:", error);
+          showAnnFormMessage("Failed to delete announcement.", "error");
+        }
+      }
+    );
+  }
+
+  if (manageAnnouncementsBtn) {
+    manageAnnouncementsBtn.addEventListener("click", openAnnouncementsModal);
+  }
+
+  closeAnnModal.addEventListener("click", closeAnnouncementsModal);
+
+  window.addEventListener("click", (event) => {
+    if (event.target === announcementsModal) closeAnnouncementsModal();
+  });
+
+  // ── Initialize app ──────────────────────────────────────────────────────────
+
   // Expose filter functions to window for future UI control
   window.activityFilters = {
     setDayFilter,
@@ -865,4 +1147,5 @@ document.addEventListener("DOMContentLoaded", () => {
   checkAuthentication();
   initializeFilters();
   fetchActivities();
+  fetchAndDisplayAnnouncements();
 });
