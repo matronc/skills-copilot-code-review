@@ -112,13 +112,10 @@ def create_announcement(
     _require_teacher(teacher_username)
     _validate_dates(expires_at, starts_at or None)
 
-    if not message or not message.strip():
-        raise HTTPException(status_code=400, detail="Message cannot be empty.")
-    if len(message) > 500:
-        raise HTTPException(status_code=400, detail="Message cannot exceed 500 characters.")
+    sanitized_message = _validate_message(message)
 
     doc = {
-        "message": message.strip(),
+        "message": sanitized_message,
         "expires_at": expires_at,
         "starts_at": starts_at or None,
         "created_by": teacher_username,
@@ -145,10 +142,7 @@ def update_announcement(
     _require_teacher(teacher_username)
     _validate_dates(expires_at, starts_at or None)
 
-    if not message or not message.strip():
-        raise HTTPException(status_code=400, detail="Message cannot be empty.")
-    if len(message) > 500:
-        raise HTTPException(status_code=400, detail="Message cannot exceed 500 characters.")
+    sanitized_message = _validate_message(message)
 
     try:
         object_id = ObjectId(announcement_id)
@@ -156,7 +150,7 @@ def update_announcement(
         raise HTTPException(status_code=400, detail="Invalid announcement ID.")
 
     update_fields = {
-        "message": message.strip(),
+        "message": sanitized_message,
         "expires_at": expires_at,
         "starts_at": starts_at or None,
     }
